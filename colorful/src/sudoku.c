@@ -8,7 +8,7 @@
     SSSSS    UUUU   DDDD     OOOO   K    K   UUUU
   
     « SUDOKU » DE L'ARCADE MAGIQUE: ÉDITION CONSOLE COLORÉE
-    ALPHA VERSION
+    CODE PROTOTYPE
   
     modifié le 11 novembre 2026
     June Sugg
@@ -16,10 +16,10 @@
 ---------------------------------------------------------------------------------------------
 */
 
-// Prevent security warnings
+// Suppress MSVC security warnings
 #define _CRT_SECURE_NO_WARNINGS
 
-// Include some necessary libraries
+// Include the required headers
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -28,7 +28,7 @@
 #include <string.h>
 #include "locales/locale.h"
 
-// Windows only
+// Platform-specific headers (Windows / macOS, Linux)
 #ifdef _WIN32
 #include <windows.h>
 #include <conio.h>
@@ -44,7 +44,7 @@
 /*-------------------------------------------------------------------------------------------
     Macros
 -------------------------------------------------------------------------------------------*/
-// ANSI
+// ANSI escape codes
 #define ANSI_RESET                 "\033[0m"
 #define ANSI_BOLD                  "\033[01m"
 #define ANSI_ITALIC                "\033[3m"
@@ -90,7 +90,7 @@
 #define DIFF_EASY        1
 #define DIFF_NORMAL      2
 #define DIFF_HARD        3
-#define GIVENS_EASY      40     // 처음에 보여 주는 숫자 개수 (목표치)
+#define GIVENS_EASY      40     // Number of givens shown at the start (target)
 #define GIVENS_NORMAL    32
 #define GIVENS_HARD      26
 #define INPUT_COORDINATE 1
@@ -102,7 +102,7 @@
 
 
 /*-------------------------------------------------------------------------------------------
-    Enumerator Structs
+    Enums
 -------------------------------------------------------------------------------------------*/
 // Menu list
 typedef enum {
@@ -173,7 +173,7 @@ typedef struct Setting {
 
 
 /*-------------------------------------------------------------------------------------------
-    초기화
+    Global Variables
 -------------------------------------------------------------------------------------------*/
 // File pointer
 FILE* fp = NULL;
@@ -181,8 +181,8 @@ FILE* fp = NULL;
 // Language
 Locale locale = KO_KR;
 
-// 생성 알고리즘용 캐시
-// *_used[row/column/subgrid][following number(0...9)]
+// Caches for the generator
+// *_used[row/column/subgrid index][number 0-9, index 0 unused]; cell_used is [column][row][number]
 bool row_used    [9][10] = {{false}};
 bool column_used [9][10] = {{false}};
 bool subgrid_used[9][10] = {{false}};
@@ -191,7 +191,7 @@ bool cell_used[9][9][10] = {{false}};
 // User initialization
 User user = {
     NULL,       // char* name
-    1001,       // uint16_t id
+    1001,       // uint32_t id
     NULL,       // unsigned char *avatar_buf
     0,          // size_t avatar_size
     0,          // unsigned int avatar_id
@@ -200,7 +200,7 @@ User user = {
     0           // unsigned int color
 };
 
-// 통계용 변수 (게임 시스템에는 직접적인 영향이 없음)
+// Statistics only (no direct effect on gameplay)
 unsigned int count_backtrack = 0;
 
 
@@ -230,7 +230,7 @@ void clear_screen() {
 -------------------------------------------------------------------------------------------*/
 static void enable_ansi(void) {
 #ifdef _WIN32
-    // 구형 Windows 콘솔에서도 ANSI 이스케이프가 해석되도록
+    // Make older Windows consoles interpret ANSI escape codes as well
     HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
     DWORD mode = 0;
     if (h != INVALID_HANDLE_VALUE && GetConsoleMode(h, &mode)) {
@@ -265,13 +265,13 @@ void key_init() {
     struct termios t;
     tcgetattr(0, &orig); t = orig;
 
-    // Turn off ICANON and ECHO, keep ISIG (processing Ctrl+C) on
+    // Turn off ICANON and ECHO; keep ISIG on so Ctrl+C still works
     t.c_lflag &= ~(ICANON | ECHO);
 
-    // 
+    // Non-blocking: read() returns immediately even if no key is pressed
     t.c_cc[VMIN] = 0; t.c_cc[VTIME] = 0;
 
-    // Apply this setting
+    // Apply the new settings
     tcsetattr(0, TCSANOW, &t);
 }
 
@@ -288,7 +288,7 @@ int key_get() {
     return c;
 }
 #endif
-/* --- End of 1- --- */
+/* --- End of 1-3 --- */
 
 
 /*
@@ -332,7 +332,7 @@ void set_seed(Game* g, int mode) {
     }
 }
 
-// Shuffle from back to front, freezing determined elements
+// Fisher-Yates shuffle: go from back to front, fixing one position per step
 void shuffle(int arr[], int size) {
     for (int i=size-1; i>0; i--) {
         int r = rand() % (i + 1);
@@ -349,27 +349,27 @@ void shuffle(int arr[], int size) {
 /*-------------------------------------------------------------------------------------------
     2-2. File Writer
 -------------------------------------------------------------------------------------------*/
-// Start writing file
+// Start writing the file
 void file_writing_start() {
-    // Get current time from computer
+    // Get the current local time
     time_t timer = time(NULL);
     struct tm* t = localtime(&timer);
 
-    // Set Filename
+    // Build the file name from the time
     char filename[100];
     strftime(filename, sizeof(filename), "%m-%d-%Y_%H%M%S.txt", t);
 
-    // 파일을 w(write) 모드로 열기
+    // Open the file in write ("w") mode
     fp = fopen(filename, "w");
 }
 
-// End writing file
+// Finish writing the file
 void file_writing_end(const Game* g, Cell grid[9][9]) {
-    // If fp(file pointer) is NULL
+    // If fp (the file pointer) is NULL
     if (fp == NULL) {
         printf("%s\n", locale_get(locale, LAM_MAGPASS_ACCESS_FAILED_JAMMED));
     }
-    // If not, start writing file
+    // Otherwise, write the file
     else {
         fprintf(fp, "Seed: %u\n", g -> seed);
         fprintf(fp, "Player: %s\n", user.name);
@@ -385,7 +385,7 @@ void file_writing_end(const Game* g, Cell grid[9][9]) {
             fprintf(fp, "\n");
         }
 
-        // Close file
+        // Close the file
         fclose(fp);
     }
 }
@@ -393,7 +393,7 @@ void file_writing_end(const Game* g, Cell grid[9][9]) {
 
 
 /*-------------------------------------------------------------------------------------------
-    2-3. Generating puzzle algorithm
+    2-3. Puzzle Generation Algorithm
 -------------------------------------------------------------------------------------------*/
 // Get the index of the 3x3 subgrid, in row-major order (top-left to bottom-right)
 // [⠶0] [⠶1] [⠶2]
@@ -403,9 +403,9 @@ int get_subgrid_number(int row, int column) {
     return ((row / 3) * 3 + (column / 3));
 }
 
-// [스도쿠판 생성 및 백트래킹 전용 함수] 해당하는 지점에 숫자를 넣을 수 있는 조건인지 검사하기
+// [Generator/backtracking only] Check whether num can be placed at (row, column)
 bool can_place(int row, int column, int num) {
-    // 3X3 서브그리드 번호 가져오기
+    // Get the index of the 3x3 subgrid
     int subgrid_num = get_subgrid_number(row, column);
 
     // Return false if the row already contains num (the number to place)
@@ -432,22 +432,22 @@ bool can_place(int row, int column, int num) {
     return true;
 }
 
-// [스도쿠판 생성 및 백트래킹 전용 함수] 해당하는 지점에 숫자 넣기
+// [Generator/backtracking only] Place num at (row, column)
 void place(int row, int column, int num, Cell grid[9][9]) {
     // Get the index of the 3x3 subgrid
     int subgrid_num = get_subgrid_number(row, column);
 
     // Place the number
     grid[column][row].answer = num;
-    grid[column][row].value = num; // Temp; 난이도에 따라 value의 초기값은 조정됨
+    grid[column][row].value = num; // Temporary; the initial value is adjusted later by difficulty
 
-    // Update the caches with the new values
+    // Update the caches
     row_used[row][num] = true;
     column_used[column][num] = true;
     subgrid_used[subgrid_num][num] = true;
 }
 
-// [스도쿠판 생성 및 백트래킹 전용 함수] 해당하는 지점의 숫자 빼기
+// [Generator/backtracking only] Remove the number at (row, column)
 void remove_number(int row, int column, int num, Cell grid[9][9]) {
     // Get the index of the 3x3 subgrid
     int subgrid_num = get_subgrid_number(row, column);
@@ -456,13 +456,13 @@ void remove_number(int row, int column, int num, Cell grid[9][9]) {
     grid[column][row].answer = 0;
     grid[column][row].value = 0;
 
-    // Update the caches with the new values
+    // Update the caches
     row_used[row][num] = false;
     column_used[column][num] = false;
     subgrid_used[subgrid_num][num] = false;
 }
 
-// Reset cell_used (Entire cells)
+// Reset cell_used (all cells)
 void reset_cell_used() {
     for(int i=0; i<9; i++) {
         for(int j=0; j<9; j++) {
@@ -473,7 +473,7 @@ void reset_cell_used() {
     }
 }
 
-// Reset cell_used 초기화 (Only row)
+// Reset cell_used (one row only)
 void reset_cell_used_row(int row) {
     for(int i=0; i<9; i++) {
         for(int j=0; j<10; j++) {
@@ -482,7 +482,7 @@ void reset_cell_used_row(int row) {
     }
 }
 
-// Reset cell_used 초기화 (Only column)
+// Reset cell_used (one column only)
 void reset_cell_used_column(int column) {
     for(int i=0; i<9; i++) {
         for(int j=0; j<10; j++) {
@@ -491,7 +491,7 @@ void reset_cell_used_column(int column) {
     }
 }
 
-// Reset caches
+// Reset all generator caches
 void reset_generator() {
     memset(row_used, 0, sizeof row_used);
     memset(column_used, 0, sizeof column_used);
@@ -500,7 +500,7 @@ void reset_generator() {
     count_backtrack = 0;
 }
 
-// Show complete grid
+// Print the whole grid
 void show_grid(Cell grid[9][9]) {
     for(int row=0; row<9; row++) {
         if (row==0) {
@@ -528,7 +528,7 @@ void show_grid(Cell grid[9][9]) {
 
 
 /*-------------------------------------------------------------------------------------------
-    2-4. Generating puzzle algorithm: PART 2
+    2-4. Puzzle Generation Algorithm: Part 2
 -------------------------------------------------------------------------------------------*/
 // Generate the Sudoku grid — the core function of this program
 void generate_grid(Cell grid[9][9]) {
@@ -541,18 +541,18 @@ void generate_grid(Cell grid[9][9]) {
         int row = while_idx / 9;
         int column = while_idx % 9;
 
-        // Shuffle the array containing candidate numbers
+        // Shuffle the candidate numbers
         shuffle(candidate_nums, 9);
 
-        // 숫자를 넣을 자격을 충족했는지 확인하는 변수
+        // Whether a number was placed in this cell
         bool passed = false;
 
-        // Fill the grid cell by cell
+        // Try the candidates one by one
         for(int i=0; i<9; i++) {
-            // 인덱스 참조로 후보 숫자들 가져오기
+            // Get the candidate at index i
             int num = candidate_nums[i];
 
-            // 해당 숫자가 들어갈 수 없다면 건너뛰기
+            // Skip it if it cannot be placed here
             if (!can_place(row, column, num)) continue;
 
             // Place the number
@@ -561,28 +561,28 @@ void generate_grid(Cell grid[9][9]) {
             break;
         }
 
-        // 바로 위 '숫자 넣기 반복문'을 통하여 숫자를 넣는 데 성공할 경우
+        // If the loop above placed a number
         if (passed) {
-            // 디버그용 메시지
+            // Debug message
             printf("(%d, %d) %d: ", row, column, while_idx);
 
-            // 다음으로 한 칸 이동
+            // Move to the next cell
             while_idx++;
             
-            // 디버그용 메시지
+            // Debug message
             printf("Number placed ----> %d\n", grid[column][row].answer);
 
-            // 바로 아래 "if (while_idx > 1) { ... }" 문을 실행하지 않고 건너뜀
+            // Skip the backtracking code below
             continue;
         }
 
-        // 바로 위 '숫자 넣기 반복문'을 통하여 숫자 넣기에 실패할 경우, 바로 아래 코드를 통해 백트랙 작업 시작
+        // If the loop above failed to place a number, backtrack using the code below
         
-        // 만약 while_idx가 0 이하일 경우, 백트랙을 진행할 수 없음
+        // If while_idx is 0 or less, there is nothing to backtrack to
         if (while_idx <= 0) {
-            // 처음부터 다시 시작하기 위해 초기화함
+            // Reset everything to start over from scratch
             
-            // Reset the array
+            // Reset the arrays
             for(int i=0; i<9; i++) {
                 for(int j=0; j<9; j++) {
                     for(int k=0; k<10; k++) {
@@ -597,37 +597,37 @@ void generate_grid(Cell grid[9][9]) {
             printf("판을 재생성했습니다.\n");
         }
 
-        // If not, 백트랙을 정상적으로 진행함
+        // Otherwise, backtrack normally
         else {
             // Added on November 11
             for (int k=0; k<10; k++) {
                 cell_used[column][row][k] = false;
             }
 
-            // 한 칸 백트랙
+            // Step back one cell
             while_idx--;
             count_backtrack++;
 
-            // 백트랙된 행렬값 구하기
+            // Get the row and column of the cell we stepped back to
             int backtracked_row = while_idx / 9;
             int backtracked_column = while_idx % 9;
 
-            // 백트랙될 행렬값을 바탕으로 사용된 슬롯 채우기
+            // Mark that cell's current number as tried
             cell_used[backtracked_column][backtracked_row][grid[backtracked_column][backtracked_row].answer] = true;
 
-            // 여기서 if는 백트랙된 칸의 번호가(좌측 상단이 1, 우측 하단이 81이라고 가정) 2 이상인 경우에만 백트랙을 진행하는 안전 장치로, if를 지워도 무방함
+            // Safety check; it is always true here, so this if can be removed
             if(backtracked_row >= 0 && backtracked_column >= 0) {
-                // 해당 칸에서 숫자 제거
+                // Remove the number from that cell
                 printf("한 칸 백트래킹...\n");
                 remove_number(backtracked_row, backtracked_column, grid[backtracked_column][backtracked_row].answer, grid);
             }
             
-            // 이후 백트랙된 인덱스값을 바탕으로 다시 숫자 넣기 시작
+            // The next iteration retries that cell
         }
     }
 }
 
-// Reset all of the game settings
+// Reset the game and settings
 void init_game(Game *g, Setting *s) {
     memset(g, 0, sizeof *g);
     memset(s, 0, sizeof *s);
@@ -639,13 +639,15 @@ void init_game(Game *g, Setting *s) {
 
 
 /*-------------------------------------------------------------------------------------------
-    2-5. Commander
+    2-5. Command Handler
 -------------------------------------------------------------------------------------------*/
 void show_help(void);
 
-// Read and process user's command
+// Read and process the user's command
 void game_controller(Game *g, Setting *s, uint8_t *flag) {
+
     int key = key_get();
+
 
 }
 /* --- End of 2-5 --- */
@@ -666,7 +668,7 @@ void login() {
     printf("\n%s\n", locale_get(locale, LAM_MAGPASS_ACCESS));
     printf("\n%s\n", locale_get(locale, LAM_MAGPASS_ACCESS_FAILED_SEARCH));
 
-    // Try to open thefile
+    // Try to open the save file
     fp = fopen("savedata.dat", "rb");
 
     if (fp == NULL) {
@@ -676,7 +678,7 @@ void login() {
         int username_len = 0;
         bool ok = false;
 
-        // 문자열 길이를 먼저 읽어서 말이 되는 값인지부터 확인 (범위: 1~100)
+        // Read the name length first and check that it makes sense (1-100)
         if (fread(&username_len, sizeof(int), 1, fp) == 1 &&
             username_len > 0 && username_len <= 100) {
 
@@ -684,7 +686,7 @@ void login() {
             if (user.name != NULL &&
                 fread(user.name, sizeof(char), username_len, fp) == (size_t)username_len &&
                 fread(&user.id, sizeof(int), 1, fp) == 1) {
-                user.name[username_len - 1] = '\0'; // 파일이 손상되어도 문자열 끝 보장
+                user.name[username_len - 1] = '\0'; // Guarantee a terminator even if the file is corrupted
                 ok = true;
             }
         }
@@ -696,7 +698,7 @@ void login() {
             return;
         }
 
-        // If failed to read
+        // If reading failed
         free(user.name);
         user.name = NULL;
         printf("\n\aYou should create a new MagPass.\n");
@@ -719,15 +721,15 @@ void login() {
     else {
         size_t len = strlen(user.name);
         if (len > 0 && user.name[len - 1] == '\n') {
-            user.name[len - 1] = '\0'; // fgets는 엔터까지 같이 담으므로 제거
+            user.name[len - 1] = '\0'; // fgets keeps the newline, so remove it
         }
         else {
-            // 99바이트보다 길게 입력한 경우: 못 담은 나머지 버리기
+            // Input longer than 99 bytes: discard the rest of the line
             int c; while ((c = getchar()) != '\n' && c != EOF) {}
         }
     }
 
-    // 아무것도 안 치고 엔터만 누른 경우
+    // Only Enter was pressed
     if (user.name[0] == '\0') {
         strcpy(user.name, "Player");
     }
@@ -740,27 +742,27 @@ void login() {
     user.avatar_id = 1;
 
     //-----------------------------------------------------------------------------------
-    // 3. ID Allocation
+    // 3. ID allocation
     //-----------------------------------------------------------------------------------
     user.id = 12345678;
 
     //-----------------------------------------------------------------------------------
-    // Write
+    // 4. Save to file
     //-----------------------------------------------------------------------------------
     fp = fopen("savedata.dat", "wb");
     if (fp == NULL) {
         printf("\n%s\n", locale_get(locale, LAM_MAGPASS_ISSUE_FAILED));
-        return; // 이번 실행 동안은 이름이 유지됨
+        return; // The name is still kept for this session
     }
 
-    int username_len = (int)strlen(user.name) + 1; // '\0' 포함
+    int username_len = (int)strlen(user.name) + 1; // Including '\0'
     fwrite(&username_len, sizeof(int), 1, fp);
     fwrite(user.name, sizeof(char), username_len, fp);
     fwrite(&user.id, sizeof(int), 1, fp);
 
     fclose(fp);
     fp = NULL;
-    // username은 여기서 free 하지 않음: main 끝에서 한 번만 해제
+    // Do not free user.name here; it is freed once at the end of main
 }
 
 
@@ -813,7 +815,7 @@ void show_help() {
 int main() {
     enable_ansi();
 
-    // Import valid save data
+    // Load the save data
     login();
 
     // Title screen
@@ -828,13 +830,13 @@ int main() {
     set_seed(&game, SEED_BY_TIME);
     srand(game.seed);
 
-    // Start file writing mode
+    // Start writing the file
     file_writing_start();
 
-    // Print the grid to the console 
+    // Print the grid to the console
     show_grid(game.grid);
 
-    // Execute writing, and exit file writing mode
+    // Write the file and close it
     file_writing_end(&game, game.grid);
 
     uint8_t flag = 0;
@@ -858,7 +860,7 @@ int main() {
         if (flag == FLAG_GAMESTOP) break;
     }
 
-    // 동적 할당 해제
+    // Free dynamically allocated memory
     free(user.name);
     user.name = NULL;
 
